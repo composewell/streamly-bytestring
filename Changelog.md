@@ -1,5 +1,17 @@
 # Changelog for streamly-bytestring
 
+## Unreleased
+
+* Add `Streamly.External.ByteString.Short` for interconversion of
+  `ShortByteString` and `Array Word8`.
+* `Strict.toArray` copies a `ByteString` that is not in GHC heap memory with
+  `memcpy` into a pinned array, instead of copying it one byte at a time into
+  an unpinned array.
+* `Strict.toArray` returns the shared empty array for every zero length
+  `ByteString`.
+* Fix `Strict.fromArray` with streamly-core-0.1.0 to copy an unpinned array to
+  pinned memory instead of using its address.
+
 ## 0.2.4 (Apr 2026)
 
 * Replace gauge with tasty-bench for benchmarks

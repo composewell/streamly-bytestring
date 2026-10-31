@@ -8,13 +8,23 @@ a generalization of `ByteString` and better integrated with streamly.
 This library is to enable interoperation of streamly with existing code that
 uses `ByteString`.
 
-The package provides APIs to interconvert between strict `Bytestring` and
-streamly `Array Word8` and between lazy `Bytestring` and stream of `Array
-Word8`.
+The package provides APIs to interconvert between:
 
-The interconversion in the case of strict `Bytestring` and streamly `Array
-Word8` has no overhead for GHC allocated memory. For foreign allocator allocated
-memory there is a copy involved.
+* strict `ByteString` and streamly `Array Word8`
+  (`Streamly.External.ByteString`)
+* lazy `ByteString` and a stream of `Array Word8`
+  (`Streamly.External.ByteString.Lazy`)
+* `ShortByteString` and streamly `Array Word8`
+  (`Streamly.External.ByteString.Short`)
+
+The interconversion of strict `ByteString` and `Array Word8` has no overhead
+for GHC allocated memory. A `ByteString` in memory allocated outside the GHC
+heap is copied to a pinned array. An unpinned array is copied to pinned memory
+when converted to a `ByteString`.
+
+`ShortByteString` to `Array Word8` has no overhead. `Array Word8` to
+`ShortByteString` has no overhead when the array covers its whole underlying
+byte array, otherwise the array is copied.
 
 ## Usage
 

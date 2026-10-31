@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Streamly.External.ByteString
   ( toArray
@@ -19,19 +20,21 @@ where
 import Control.Monad.IO.Class (MonadIO)
 import Data.Word (Word8)
 import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Storable (peek)
 import GHC.Exts
     ( Addr#
     , MutableByteArray#
     , RealWorld
     , byteArrayContents#
+    , copyAddrToByteArray#
     , minusAddr#
+    , newPinnedByteArray#
     , plusAddr#
     , unsafeCoerce#
     )
 import GHC.ForeignPtr (ForeignPtr(..), ForeignPtrContents(..))
 import GHC.Int (Int(..))
-import GHC.Ptr (Ptr(..), nullPtr, plusPtr)
+import GHC.IO (IO(..))
+import GHC.Ptr (Ptr(..), nullPtr)
 import Streamly.Data.Fold (Fold)
 import Streamly.Data.Unfold (Unfold, lmap)
 
@@ -40,7 +43,6 @@ import Data.ByteString.Internal (ByteString(..))
 import Streamly.Internal.System.IO (unsafeInlineIO)
 
 import qualified Streamly.Data.Array as Array
-import qualified Streamly.Internal.Data.Unfold as Unfold (fold, mkUnfoldrM)
 
 #if !(MIN_VERSION_bytestring(0,11,0))
 import GHC.ForeignPtr (plusForeignPtr)
@@ -51,12 +53,10 @@ import Streamly.Internal.Data.Array (Array(..))
 import Streamly.Internal.Data.MutByteArray (MutByteArray(..))
 import qualified Streamly.Internal.Data.Array as Array
 import qualified Streamly.Internal.Data.MutByteArray as MutBA
-import qualified Streamly.Internal.Data.Stream as StreamD (Step(Yield))
 #else
 import Streamly.Internal.Data.Array.Type (Array(..))
 import Streamly.Internal.Data.Unboxed (MutableByteArray(..))
 import qualified Streamly.Internal.Data.Unboxed as MutBA
-import qualified Streamly.Internal.Data.Stream.StreamD as StreamD (Step(Yield))
 #endif
 
 import Prelude hiding (read)
@@ -107,12 +107,6 @@ pinnedCreateOf = Array.writeN
 pinnedCreate = Array.write
 #endif
 
-#if MIN_VERSION_streamly_core(0,3,0)
-#define CREATE_N Array.createOf
-#else
-#define CREATE_N Array.writeN
-#endif
-
 {-# INLINE mutableByteArrayContents# #-}
 mutableByteArrayContents# :: MutableByteArray# RealWorld -> Addr#
 mutableByteArrayContents# marr# = byteArrayContents# (unsafeCoerce# marr#)
@@ -125,13 +119,23 @@ makeForeignPtr (MUT_BYTE_ARRAY marr#) (I# off#) =
         (mutableByteArrayContents# marr# `plusAddr#` off#)
         (PlainPtr marr#)
 
+-- | Copy @len@ bytes starting at the given address to a new pinned array.
+{-# INLINE copyToPinnedArray #-}
+copyToPinnedArray :: Ptr Word8 -> Int -> IO (Array Word8)
+copyToPinnedArray (Ptr addr#) len@(I# len#) =
+    IO $ \s0 ->
+        case newPinnedByteArray# len# s0 of
+            (# s1, marr# #) ->
+                case copyAddrToByteArray# addr# marr# 0# len# s1 of
+                    s2 -> (# s2, Array (MUT_BYTE_ARRAY marr#) 0 len #)
+
 -- | Convert a 'ByteString' to an array of 'Word8'. It can be done in constant
 -- time only for GHC allocated memory. For foreign allocator allocated memory
--- there is a copy involved.
+-- the bytes are copied to a new pinned array.
 {-# INLINE toArray #-}
 toArray :: ByteString -> Array Word8
-toArray (CONSTRUCTOR((ForeignPtr addr# _), _, _))
-    | Ptr addr# == nullPtr = Array NIL 0 0
+toArray (CONSTRUCTOR((ForeignPtr addr# _), _, len))
+    | Ptr addr# == nullPtr || len == 0 = Array NIL 0 0
 toArray (CONSTRUCTOR((ForeignPtr addr# (PlainPtr marr#)), off0, len)) =
     let off = I# (addr# `minusAddr#` mutableByteArrayContents# marr#)
                   WHEN_0_10_12(+ off0)
@@ -139,13 +143,7 @@ toArray (CONSTRUCTOR((ForeignPtr addr# (PlainPtr marr#)), off0, len)) =
 toArray (CONSTRUCTOR(fptr, off, len)) =
     unsafeInlineIO
         $ withForeignPtr (fptr WHEN_0_10_12(`plusForeignPtr` off))
-        $ Unfold.fold (CREATE_N len) generator
-
-    where
-
-    generator =
-        Unfold.mkUnfoldrM
-            (\ptr -> flip StreamD.Yield (ptr `plusPtr` 1) <$> peek ptr)
+        $ \ptr -> copyToPinnedArray ptr len
 
 -- | Convert an array of 'Word8' to a 'ByteString'.
 --

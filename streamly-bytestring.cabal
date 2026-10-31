@@ -31,6 +31,7 @@ library
   exposed-modules:
       Streamly.External.ByteString
       Streamly.External.ByteString.Lazy
+      Streamly.External.ByteString.Short
   other-modules:
       Paths_streamly_bytestring
   hs-source-dirs:

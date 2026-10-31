@@ -43,11 +43,13 @@ import Prelude hiding (read)
 #define UNFOLD_EACH Unfold.many
 #endif
 
--- | Unfold a lazy ByteString to a stream of 'Array' 'Words'.
+-- | Unfold a lazy ByteString to a stream of 'Array' 'Word8'.
 {-# INLINE  chunkReader #-}
 chunkReader :: Monad m => Unfold m ByteString (Array Word8)
 chunkReader = Unfold step seed
-  where
+
+    where
+
     seed = return
     step (Chunk bs bl) = return $ Yield (Strict.toArray bs) bl
     step Empty = return Stop
@@ -55,24 +57,13 @@ chunkReader = Unfold step seed
 -- | Unfold a lazy ByteString to a stream of Word8
 {-# INLINE reader #-}
 reader :: Monad m => Unfold m ByteString Word8
-reader = UNFOLD_EACH Array.reader readChunks
+reader = UNFOLD_EACH Array.reader chunkReader
 
 -- TODO: "toChunks" should be called "read" instead
 -- | Convert a lazy 'ByteString' to a serial stream of 'Array' 'Word8'.
 {-# INLINE toChunks #-}
 toChunks :: Monad m => ByteString -> Stream m (Array Word8)
-toChunks = Stream.unfold readChunks
-
-{-
-newtype LazyIO a = LazyIO { runLazy :: IO a } deriving (Functor, Applicative)
-
-liftToLazy :: IO a -> LazyIO a
-liftToLazy = LazyIO
-
-instance Monad LazyIO where
-    return = pure
-    LazyIO a >>= f = LazyIO (unsafeInterleaveIO a >>= unsafeInterleaveIO . runLazy . f)
--}
+toChunks = Stream.unfold chunkReader
 
 -- | Convert a serial stream of 'Array' 'Word8' to a lazy 'ByteString'.
 --
@@ -87,17 +78,20 @@ instance Monad LazyIO where
 -- can wrap the /IO/ type to make the bind lazy like this:
 --
 -- @
--- newtype LazyIO a = LazyIO { runLazy :: IO a } deriving (Functor, Applicative)
+-- newtype LazyIO a = LazyIO { runLazy :: IO a }
+--     deriving (Functor, Applicative)
 --
 -- liftToLazy :: IO a -> LazyIO a
 -- liftToLazy = LazyIO
 --
 -- instance Monad LazyIO where
 --   return = pure
---   LazyIO a >>= f = LazyIO (unsafeInterleaveIO a >>= unsafeInterleaveIO . runLazy . f)
+--   LazyIO a >>= f =
+--       LazyIO (unsafeInterleaveIO a >>= unsafeInterleaveIO . runLazy . f)
 -- @
 --
 -- /fromChunks/ can then be used as,
+--
 -- @
 -- {-# INLINE fromChunksIO #-}
 -- fromChunksIO :: Stream IO (Array Word8) -> IO ByteString

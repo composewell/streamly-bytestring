@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MagicHash #-}
@@ -46,6 +47,10 @@ import qualified Streamly.Data.Array as Array
 
 #if !(MIN_VERSION_bytestring(0,11,0))
 import GHC.ForeignPtr (plusForeignPtr)
+#endif
+
+#if !MIN_VERSION_streamly_core(0,2,0)
+import GHC.Exts (copyMutableByteArray#, isMutableByteArrayPinned#, isTrue#)
 #endif
 
 #if MIN_VERSION_streamly_core(0,2,0)
@@ -102,7 +107,19 @@ ensurePinned = Array.pin
 pinnedCreateOf = Array.pinnedWriteN
 pinnedCreate = Array.pinnedWrite
 #else
-ensurePinned = pure
+-- streamly-core-0.1.0 allocates arrays in pinned memory, except arrays
+-- created by the internal MutArray.new API.
+ensurePinned arr@(Array (MutableByteArray marr#) start@(I# start#) end) =
+    IO $ \s0 ->
+        if isTrue# (isMutableByteArrayPinned# marr#)
+        then (# s0, arr #)
+        else
+            let !len@(I# len#) = end - start
+             in case newPinnedByteArray# len# s0 of
+                (# s1, marr1# #) ->
+                    case copyMutableByteArray# marr# start# marr1# 0# len# s1
+                    of
+                        s2 -> (# s2, Array (MutableByteArray marr1#) 0 len #)
 pinnedCreateOf = Array.writeN
 pinnedCreate = Array.write
 #endif
@@ -147,11 +164,9 @@ toArray (CONSTRUCTOR(fptr, off, len)) =
 
 -- | Convert an array of 'Word8' to a 'ByteString'.
 --
--- Please ensure that the array is pinned when using this function.
-
--- If the array is pinned, the operation is performed in constant time. Whereas
--- for an unpinned array a copy is involved to pin it.
---
+-- If the array is in pinned memory, the 'ByteString' shares the memory of the
+-- array, in constant time. Otherwise the array is first copied to pinned
+-- memory.
 {-# INLINE fromArray #-}
 fromArray :: Array Word8 -> ByteString
 fromArray arr

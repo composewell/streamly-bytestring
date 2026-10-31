@@ -186,6 +186,27 @@ jobs:
               CABAL_PROJECT=cabal.project.d/master
               DISABLE_SDIST_BUILD=y
 
+          - name: streamly-core-0.3.3
+            runner: ubuntu-latest
+            command: cabal
+            ghc_version: 9.10.3
+            pack_options: >-
+              CABAL_PROJECT=cabal.project.d/streamly-core-0.3.3
+
+          - name: streamly-core-0.3.2
+            runner: ubuntu-latest
+            command: cabal
+            ghc_version: 9.8.4
+            pack_options: >-
+              CABAL_PROJECT=cabal.project.d/streamly-core-0.3.2
+
+          - name: streamly-core-0.3.1
+            runner: ubuntu-latest
+            command: cabal
+            ghc_version: 9.12.4
+            pack_options: >-
+              CABAL_PROJECT=cabal.project.d/streamly-core-0.3.1
+
           - name: streamly-core-0.3.0
             runner: ubuntu-latest
             command: cabal
